@@ -38,6 +38,7 @@ export default function App() {
 
   const refreshTasks = async () => {
     try {
+      console.log("Refreshing tasks...");
       const data = await invoke<TaskView[]>("get_tasks");
       setTasks(data);
     } catch (err) {
@@ -47,7 +48,10 @@ export default function App() {
 
   useEffect(() => {
     refreshTasks();
-    const unlisten = listen("task-updated", () => refreshTasks());
+    const unlisten = listen("task-updated", (e) => {
+        console.log("Event: task-updated", e.payload);
+        refreshTasks();
+    });
     
     // UI poller for duration updates
     const interval = setInterval(() => {
@@ -62,6 +66,7 @@ export default function App() {
 
   const handleStart = async (id: string) => {
     try {
+      console.log("CMD: start_task", id);
       await invoke("start_task", { id });
     } catch (err) {
       console.error("Start failed:", err);
@@ -71,6 +76,7 @@ export default function App() {
 
   const handleStop = async (id: string) => {
     try {
+      console.log("CMD: stop_task", id);
       await invoke("stop_task", { id });
     } catch (err) {
       console.error("Stop failed:", err);
@@ -78,14 +84,15 @@ export default function App() {
   };
 
   const handleDelete = async (id: string) => {
+    console.log("Delete button clicked for id:", id);
     if (confirm("Are you sure you want to delete this task?")) {
       try {
-        console.log("Invoking delete_task for id:", id);
+        console.log("Invoking delete_task via Tauri...");
         await invoke("delete_task", { id });
-        console.log("Delete command finished, refreshing list...");
+        console.log("Delete success, refreshing...");
         await refreshTasks();
       } catch (err) {
-        console.error("Delete failed:", err);
+        console.error("Delete failed error:", err);
         alert("Delete failed: " + err);
       }
     }
@@ -105,31 +112,38 @@ export default function App() {
       }
     });
 
-    if (editingTask) {
-      await invoke("update_task", {
-        id: editingTask.config.id,
-        name: newName,
-        command: newCmd,
-        tag: newTag,
-        auto_retry: true,
-        env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
-      });
-    } else {
-      await invoke("create_task", { 
-        name: newName, 
-        command: newCmd, 
-        tag: newTag, 
-        auto_retry: true,
-        env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
-      });
+    try {
+        if (editingTask) {
+          console.log("CMD: update_task", editingTask.config.id);
+          await invoke("update_task", {
+            id: editingTask.config.id,
+            name: newName,
+            command: newCmd,
+            tag: newTag,
+            auto_retry: true,
+            env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
+          });
+        } else {
+          console.log("CMD: create_task");
+          await invoke("create_task", { 
+            name: newName, 
+            command: newCmd, 
+            tag: newTag, 
+            auto_retry: true,
+            env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
+          });
+        }
+        
+        setIsAddOpen(false);
+        setEditingTask(null);
+        setNewName("");
+        setNewCmd("");
+        setNewEnv("");
+        await refreshTasks();
+    } catch (err) {
+        console.error("Save failed:", err);
+        alert("Save failed: " + err);
     }
-    
-    setIsAddOpen(false);
-    setEditingTask(null);
-    setNewName("");
-    setNewCmd("");
-    setNewEnv("");
-    refreshTasks();
   };
 
   const startEdit = (task: TaskView) => {

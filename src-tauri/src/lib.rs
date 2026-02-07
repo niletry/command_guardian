@@ -41,11 +41,11 @@ struct RunningProcess {
 }
 
 pub struct AppState {
-    tasks: Arc<Mutex<HashMap<String, TaskConfig>>>,
-    processes: Arc<Mutex<HashMap<String, RunningProcess>>>,
-    statuses: Arc<Mutex<HashMap<String, TaskStatus>>>,
-    log_dir: std::path::PathBuf,
-    config_path: std::path::PathBuf,
+    pub tasks: Arc<Mutex<HashMap<String, TaskConfig>>>,
+    pub processes: Arc<Mutex<HashMap<String, RunningProcess>>>,
+    pub statuses: Arc<Mutex<HashMap<String, TaskStatus>>>,
+    pub log_dir: std::path::PathBuf,
+    pub config_path: std::path::PathBuf,
 }
 
 impl AppState {
@@ -56,10 +56,8 @@ impl AppState {
             .unwrap_or_else(|_| std::path::PathBuf::from("data"));
 
         std::fs::create_dir_all(&data_dir).unwrap_or_default();
-
         let log_dir = data_dir.join("logs");
         std::fs::create_dir_all(&log_dir).unwrap_or_default();
-
         let config_path = data_dir.join("config.json");
 
         let tasks = if config_path.exists() {
@@ -106,9 +104,9 @@ impl AppState {
 
 // --- Internal Helpers ---
 
-fn stop_task_internal(state: &AppState, id: String) -> bool {
+fn stop_task_internal(state: &AppState, id: &str) -> bool {
     let mut processes = state.processes.lock().unwrap();
-    let was_running = if let Some(mut proc) = processes.remove(&id) {
+    let was_running = if let Some(mut proc) = processes.remove(id) {
         let _ = proc.child.kill();
         let _ = proc.kill_tx.send(());
         true
@@ -117,7 +115,7 @@ fn stop_task_internal(state: &AppState, id: String) -> bool {
     };
 
     let mut statuses = state.statuses.lock().unwrap();
-    if let Some(s) = statuses.get_mut(&id) {
+    if let Some(s) = statuses.get_mut(id) {
         s.status = "stopped".to_string();
         s.pid = None;
         s.start_time = None;
@@ -137,7 +135,6 @@ fn create_task(
     auto_retry: bool,
     env_vars: Option<HashMap<String, String>>,
 ) -> String {
-    println!("CMD: create_task name={}", name);
     let id = uuid::Uuid::new_v4().to_string();
     let config = TaskConfig {
         id: id.clone(),
@@ -185,8 +182,7 @@ fn get_tasks(state: State<'_, AppState>) -> Vec<TaskView> {
 
 #[tauri::command]
 fn delete_task(state: State<'_, AppState>, id: String) {
-    println!("CMD: delete_task id={}", id);
-    stop_task_internal(&state, id.clone());
+    stop_task_internal(&state, &id);
 
     {
         let mut tasks = state.tasks.lock().unwrap();
@@ -205,7 +201,6 @@ fn delete_task(state: State<'_, AppState>, id: String) {
 
 #[tauri::command]
 fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<(), String> {
-    println!("CMD: start_task id={}", id);
     let config = {
         let tasks = state.tasks.lock().unwrap();
         tasks.get(&id).cloned().ok_or("Task not found")?
@@ -346,8 +341,7 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
 
 #[tauri::command]
 fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) {
-    println!("CMD: stop_task id={}", id);
-    stop_task_internal(&state, id.clone());
+    stop_task_internal(&state, &id);
     let _ = app.emit("task-updated", id);
 }
 
@@ -361,7 +355,6 @@ fn update_task(
     auto_retry: bool,
     env_vars: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
-    println!("CMD: update_task id={}", id);
     {
         let mut tasks = state.tasks.lock().unwrap();
         if let Some(config) = tasks.get_mut(&id) {
