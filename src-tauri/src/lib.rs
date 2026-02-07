@@ -135,6 +135,7 @@ fn create_task(
     auto_retry: bool,
     env_vars: Option<HashMap<String, String>>,
 ) -> String {
+    println!("CMD: create_task name={}", name);
     let id = uuid::Uuid::new_v4().to_string();
     let config = TaskConfig {
         id: id.clone(),
