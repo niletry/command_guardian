@@ -1,0 +1,23 @@
+[package]
+name = "command-guardian-backend"
+version = "0.1.0"
+description = "Backend for Command Guardian"
+authors = ["you"]
+edition = "2021"
+
+[lib]
+name = "app_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+serde_json = "1.0"
+serde = { version = "1.0", features = ["derive"] }
+tauri = { version = "2", features = [] }
+portable-pty = "0.8"
+tokio = { version = "1", features = ["full"] }
+anyhow = "1.0"
+uuid = { version = "1.0", features = ["v4", "serde"] }
+chrono = { version = "0.4", features = ["serde"] }
