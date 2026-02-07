@@ -38,22 +38,22 @@ export default function App() {
 
   const refreshTasks = async () => {
     try {
-      console.log("Refreshing tasks...");
       const data = await invoke<TaskView[]>("get_tasks");
+      console.log(">>> UI: Fetched tasks:", data.length);
       setTasks(data);
     } catch (err) {
-      console.error("Failed to fetch tasks:", err);
+      console.error(">>> UI: Failed to fetch tasks:", err);
     }
   };
 
   useEffect(() => {
+    console.log(">>> UI: App mounted");
     refreshTasks();
     const unlisten = listen("task-updated", (e) => {
-        console.log("Event: task-updated", e.payload);
+        console.log(">>> UI: Received task-updated event for:", e.payload);
         refreshTasks();
     });
     
-    // UI poller for duration updates
     const interval = setInterval(() => {
         setTasks(prev => [...prev]);
     }, 1000);
@@ -66,42 +66,41 @@ export default function App() {
 
   const handleStart = async (id: string) => {
     try {
-      console.log("CMD: start_task", id);
+      console.log(">>> UI: Requesting start_task:", id);
       await invoke("start_task", { id });
     } catch (err) {
-      console.error("Start failed:", err);
+      console.error(">>> UI: Start failed:", err);
       alert("Failed to start task: " + err);
     }
   };
 
   const handleStop = async (id: string) => {
     try {
-      console.log("CMD: stop_task", id);
+      console.log(">>> UI: Requesting stop_task:", id);
       await invoke("stop_task", { id });
     } catch (err) {
-      console.error("Stop failed:", err);
+      console.error(">>> UI: Stop failed:", err);
     }
   };
 
   const handleDelete = async (id: string) => {
-    console.log("Delete button clicked for id:", id);
+    console.log(">>> UI: Delete button clicked for id:", id);
     if (confirm("Are you sure you want to delete this task?")) {
       try {
-        console.log("Invoking delete_task via Tauri...");
+        console.log(">>> UI: Requesting delete_task:", id);
         await invoke("delete_task", { id });
-        console.log("Delete success, refreshing...");
+        console.log(">>> UI: Delete command successful, refreshing...");
         await refreshTasks();
       } catch (err) {
-        console.error("Delete failed error:", err);
+        console.error(">>> UI: Delete failed:", err);
         alert("Delete failed: " + err);
       }
     }
   };
 
-  const handleCreate = async () => {
+  const handleCreateOrUpdate = async () => {
     if (!newName || !newCmd) return;
 
-    // Parse env variables
     const env_vars: Record<string, string> = {};
     newEnv.split('\n').forEach(line => {
       const parts = line.split('=');
@@ -114,7 +113,7 @@ export default function App() {
 
     try {
         if (editingTask) {
-          console.log("CMD: update_task", editingTask.config.id);
+          console.log(">>> UI: Requesting update_task:", editingTask.config.id);
           await invoke("update_task", {
             id: editingTask.config.id,
             name: newName,
@@ -124,7 +123,7 @@ export default function App() {
             env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
           });
         } else {
-          console.log("CMD: create_task");
+          console.log(">>> UI: Requesting create_task");
           await invoke("create_task", { 
             name: newName, 
             command: newCmd, 
@@ -141,7 +140,7 @@ export default function App() {
         setNewEnv("");
         await refreshTasks();
     } catch (err) {
-        console.error("Save failed:", err);
+        console.error(">>> UI: Save failed:", err);
         alert("Save failed: " + err);
     }
   };
@@ -151,13 +150,10 @@ export default function App() {
     setNewName(task.config.name);
     setNewCmd(task.config.command);
     setNewTag(task.config.tag);
-    
-    // Format env vars back to string
     const envStr = Object.entries(task.config.env_vars || {})
       .map(([k, v]) => `${k}=${v}`)
       .join('\n');
     setNewEnv(envStr);
-    
     setIsAddOpen(true);
   };
 
@@ -362,7 +358,7 @@ export default function App() {
               </div>
               <div className="flex justify-end gap-3 mt-4">
                 <button onClick={closeAddModal} className="px-4 py-2 text-sm text-neutral-400 hover:text-white">Cancel</button>
-                <button onClick={handleCreate} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium">
+                <button onClick={handleCreateOrUpdate} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium">
                   {editingTask ? "Save Changes" : "Create Task"}
                 </button>
               </div>
