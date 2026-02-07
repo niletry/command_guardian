@@ -331,8 +331,35 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
 }
 
 #[tauri::command]
-fn stop_task(state: State<'_, AppState>, id: String) {
-    let _ = stop_task_internal(&state, id);
+fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) {
+    if stop_task_internal(&state, id.clone()) {
+        let _ = app.emit("task-updated", id);
+    }
+}
+
+#[tauri::command]
+fn update_task(
+    state: State<'_, AppState>,
+    id: String,
+    name: String,
+    command: String,
+    tag: String,
+    auto_retry: bool,
+    env_vars: Option<HashMap<String, String>>,
+) -> Result<(), String> {
+    let mut tasks = state.tasks.lock().unwrap();
+    if let Some(config) = tasks.get_mut(&id) {
+        config.name = name;
+        config.command = command;
+        config.tag = tag;
+        config.auto_retry = auto_retry;
+        config.env_vars = env_vars;
+
+        state.save_config();
+        Ok(())
+    } else {
+        Err("Task not found".to_string())
+    }
 }
 
 #[tauri::command]
@@ -405,6 +432,7 @@ pub fn run() {
             delete_task,
             start_task,
             stop_task,
+            update_task,
             resize_pty,
             write_to_pty,
             get_log_history,

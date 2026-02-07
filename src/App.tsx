@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
-import { Play, Square, Trash2, Terminal as TerminalIcon, Plus, LayoutGrid, Activity } from "lucide-react";
+import { Play, Square, Trash2, Terminal as TerminalIcon, Plus, LayoutGrid, Activity, Edit2 } from "lucide-react";
 import type { TaskView } from "./types";
 import { TerminalView } from "./components/TerminalView";
 import { clsx, type ClassValue } from "clsx";
@@ -30,6 +30,7 @@ export default function App() {
   
   // Add Task Form State
   const [isAddOpen, setIsAddOpen] = useState(false);
+  const [editingTask, setEditingTask] = useState<TaskView | null>(null);
   const [newName, setNewName] = useState("");
   const [newCmd, setNewCmd] = useState("");
   const [newTag, setNewTag] = useState("Default");
@@ -88,19 +89,54 @@ export default function App() {
       }
     });
 
-    await invoke("create_task", { 
-      name: newName, 
-      command: newCmd, 
-      tag: newTag, 
-      autoRetry: true,
-      envVars: Object.keys(env_vars).length > 0 ? env_vars : null
-    });
+    if (editingTask) {
+      await invoke("update_task", {
+        id: editingTask.config.id,
+        name: newName,
+        command: newCmd,
+        tag: newTag,
+        autoRetry: true,
+        envVars: Object.keys(env_vars).length > 0 ? env_vars : null
+      });
+    } else {
+      await invoke("create_task", { 
+        name: newName, 
+        command: newCmd, 
+        tag: newTag, 
+        autoRetry: true,
+        envVars: Object.keys(env_vars).length > 0 ? env_vars : null
+      });
+    }
     
     setIsAddOpen(false);
+    setEditingTask(null);
     setNewName("");
     setNewCmd("");
     setNewEnv("");
     refreshTasks();
+  };
+
+  const startEdit = (task: TaskView) => {
+    setEditingTask(task);
+    setNewName(task.config.name);
+    setNewCmd(task.config.command);
+    setNewTag(task.config.tag);
+    
+    // Format env vars back to string
+    const envStr = Object.entries(task.config.env_vars || {})
+      .map(([k, v]) => `${k}=${v}`)
+      .join('\n');
+    setNewEnv(envStr);
+    
+    setIsAddOpen(true);
+  };
+
+  const closeAddModal = () => {
+    setIsAddOpen(false);
+    setEditingTask(null);
+    setNewName("");
+    setNewCmd("");
+    setNewEnv("");
   };
 
   const uniqueTags = ["All", ...Array.from(new Set(tasks.map(t => t.config.tag))).sort()];
@@ -220,6 +256,10 @@ export default function App() {
                   <button onClick={() => setTerminalTask(task)} className="p-2 text-neutral-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors border border-transparent hover:border-blue-500/10">
                     <TerminalIcon className="w-5 h-5" />
                   </button>
+
+                  <button onClick={() => startEdit(task)} className="p-2 text-neutral-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors border border-transparent hover:border-amber-500/10">
+                    <Edit2 className="w-5 h-5" />
+                  </button>
                   
                   <button onClick={() => handleDelete(task.config.id)} className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/10">
                     <Trash2 className="w-5 h-5" />
@@ -248,11 +288,11 @@ export default function App() {
         </div>
       )}
 
-      {/* Add Task Modal */}
+      {/* Add/Edit Task Modal */}
       {isAddOpen && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="w-full max-w-md bg-neutral-900 border border-neutral-800 rounded-xl shadow-2xl p-6">
-            <h2 className="text-xl font-bold mb-4">New Task</h2>
+            <h2 className="text-xl font-bold mb-4">{editingTask ? "Edit Task" : "New Task"}</h2>
             <div className="flex flex-col gap-4">
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">Name</label>
@@ -291,8 +331,10 @@ export default function App() {
                 />
               </div>
               <div className="flex justify-end gap-3 mt-4">
-                <button onClick={() => setIsAddOpen(false)} className="px-4 py-2 text-sm text-neutral-400 hover:text-white">Cancel</button>
-                <button onClick={handleCreate} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium">Create Task</button>
+                <button onClick={closeAddModal} className="px-4 py-2 text-sm text-neutral-400 hover:text-white">Cancel</button>
+                <button onClick={handleCreate} className="px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-lg text-sm font-medium">
+                  {editingTask ? "Save Changes" : "Create Task"}
+                </button>
               </div>
             </div>
           </div>
