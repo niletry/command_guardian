@@ -33,11 +33,11 @@ pub struct TaskView {
     pub status: TaskStatus,
 }
 
-struct RunningProcess {
-    master: Box<dyn portable_pty::MasterPty + Send>,
-    child: Box<dyn portable_pty::Child + Send>,
-    writer: Box<dyn Write + Send>,
-    kill_tx: std::sync::mpsc::Sender<()>,
+pub struct RunningProcess {
+    pub master: Box<dyn portable_pty::MasterPty + Send>,
+    pub child: Box<dyn portable_pty::Child + Send>,
+    pub writer: Box<dyn Write + Send>,
+    pub kill_tx: std::sync::mpsc::Sender<()>,
 }
 
 pub struct AppState {
