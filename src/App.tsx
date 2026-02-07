@@ -85,14 +85,16 @@ export default function App() {
 
   const handleDelete = async (id: string) => {
     console.log(">>> UI: Delete button clicked for id:", id);
-    try {
-      console.log(">>> UI: Requesting delete_task:", id);
-      await invoke("delete_task", { id });
-      console.log(">>> UI: Delete command successful, refreshing...");
-      await refreshTasks();
-    } catch (err) {
-      console.error(">>> UI: Delete failed:", err);
-      alert("Delete failed: " + err);
+    if (confirm("Are you sure you want to delete this task?")) {
+      try {
+        console.log(">>> UI: Requesting delete_task:", id);
+        await invoke("delete_task", { id });
+        console.log(">>> UI: Delete command successful, refreshing...");
+        await refreshTasks();
+      } catch (err) {
+        console.error(">>> UI: Delete failed:", err);
+        alert("Delete failed: " + err);
+      }
     }
   };
 
@@ -117,8 +119,8 @@ export default function App() {
             name: newName,
             command: newCmd,
             tag: newTag,
-            auto_retry: true,
-            env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
+            autoRetry: true,
+            envVars: Object.keys(env_vars).length > 0 ? env_vars : null
           });
         } else {
           console.log(">>> UI: Requesting create_task");
@@ -126,8 +128,8 @@ export default function App() {
             name: newName, 
             command: newCmd, 
             tag: newTag, 
-            auto_retry: true,
-            env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
+            autoRetry: true,
+            envVars: Object.keys(env_vars).length > 0 ? env_vars : null
           });
         }
         
