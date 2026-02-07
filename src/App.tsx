@@ -61,17 +61,33 @@ export default function App() {
   }, []);
 
   const handleStart = async (id: string) => {
-    await invoke("start_task", { id });
+    try {
+      await invoke("start_task", { id });
+    } catch (err) {
+      console.error("Start failed:", err);
+      alert("Failed to start task: " + err);
+    }
   };
 
   const handleStop = async (id: string) => {
-    await invoke("stop_task", { id });
+    try {
+      await invoke("stop_task", { id });
+    } catch (err) {
+      console.error("Stop failed:", err);
+    }
   };
 
   const handleDelete = async (id: string) => {
     if (confirm("Are you sure you want to delete this task?")) {
-      await invoke("delete_task", { id });
-      refreshTasks();
+      try {
+        console.log("Invoking delete_task for id:", id);
+        await invoke("delete_task", { id });
+        console.log("Delete command finished, refreshing list...");
+        await refreshTasks();
+      } catch (err) {
+        console.error("Delete failed:", err);
+        alert("Delete failed: " + err);
+      }
     }
   };
 
@@ -95,16 +111,16 @@ export default function App() {
         name: newName,
         command: newCmd,
         tag: newTag,
-        autoRetry: true,
-        envVars: Object.keys(env_vars).length > 0 ? env_vars : null
+        auto_retry: true,
+        env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
       });
     } else {
       await invoke("create_task", { 
         name: newName, 
         command: newCmd, 
         tag: newTag, 
-        autoRetry: true,
-        envVars: Object.keys(env_vars).length > 0 ? env_vars : null
+        auto_retry: true,
+        env_vars: Object.keys(env_vars).length > 0 ? env_vars : null
       });
     }
     

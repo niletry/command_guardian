@@ -62,7 +62,6 @@ impl AppState {
 
         let config_path = data_dir.join("config.json");
 
-        // Load initial tasks
         let tasks = if config_path.exists() {
             let content = std::fs::read_to_string(&config_path).unwrap_or_default();
             serde_json::from_str::<Vec<TaskConfig>>(&content).unwrap_or_default()
@@ -105,6 +104,28 @@ impl AppState {
     }
 }
 
+// --- Internal Helpers ---
+
+fn stop_task_internal(state: &AppState, id: String) -> bool {
+    let mut processes = state.processes.lock().unwrap();
+    let was_running = if let Some(mut proc) = processes.remove(&id) {
+        let _ = proc.child.kill();
+        let _ = proc.kill_tx.send(());
+        true
+    } else {
+        false
+    };
+
+    let mut statuses = state.statuses.lock().unwrap();
+    if let Some(s) = statuses.get_mut(&id) {
+        s.status = "stopped".to_string();
+        s.pid = None;
+        s.start_time = None;
+    }
+
+    was_running
+}
+
 // --- Commands ---
 
 #[tauri::command]
@@ -116,6 +137,7 @@ fn create_task(
     auto_retry: bool,
     env_vars: Option<HashMap<String, String>>,
 ) -> String {
+    println!("CMD: create_task name={}", name);
     let id = uuid::Uuid::new_v4().to_string();
     let config = TaskConfig {
         id: id.clone(),
@@ -133,11 +155,14 @@ fn create_task(
         start_time: None,
     };
 
-    state.tasks.lock().unwrap().insert(id.clone(), config);
-    state.statuses.lock().unwrap().insert(id.clone(), status);
+    {
+        let mut tasks = state.tasks.lock().unwrap();
+        let mut statuses = state.statuses.lock().unwrap();
+        tasks.insert(id.clone(), config);
+        statuses.insert(id.clone(), status);
+    }
 
     state.save_config();
-
     id
 }
 
@@ -160,15 +185,14 @@ fn get_tasks(state: State<'_, AppState>) -> Vec<TaskView> {
 
 #[tauri::command]
 fn delete_task(state: State<'_, AppState>, id: String) {
-    // Stop the task first (locks processes then statuses)
-    let _ = stop_task_internal(&state, id.clone());
+    println!("CMD: delete_task id={}", id);
+    stop_task_internal(&state, id.clone());
 
-    // Lock and remove from maps
     {
-        // Consistency: we don't strictly need a global order if we release before next lock,
-        // but let's be careful.
-        state.tasks.lock().unwrap().remove(&id);
-        state.statuses.lock().unwrap().remove(&id);
+        let mut tasks = state.tasks.lock().unwrap();
+        let mut statuses = state.statuses.lock().unwrap();
+        tasks.remove(&id);
+        statuses.remove(&id);
     }
 
     state.save_config();
@@ -179,34 +203,9 @@ fn delete_task(state: State<'_, AppState>, id: String) {
     }
 }
 
-fn stop_task_internal(state: &AppState, id: String) -> bool {
-    let mut processes = state.processes.lock().unwrap();
-    let was_running = if let Some(mut proc) = processes.remove(&id) {
-        let _ = proc.child.kill();
-        let _ = proc.kill_tx.send(());
-        true
-    } else {
-        false
-    };
-
-    let mut statuses = state.statuses.lock().unwrap();
-    if let Some(s) = statuses.get_mut(&id) {
-        s.status = "stopped".to_string();
-        s.pid = None;
-        s.start_time = None;
-    }
-
-    was_running
-}
-
-#[tauri::command]
-fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) {
-    stop_task_internal(&state, id.clone());
-    let _ = app.emit("task-updated", id);
-}
-
 #[tauri::command]
 fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<(), String> {
+    println!("CMD: start_task id={}", id);
     let config = {
         let tasks = state.tasks.lock().unwrap();
         tasks.get(&id).cloned().ok_or("Task not found")?
@@ -239,7 +238,6 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
         c
     };
 
-    // Apply environment variables
     if let Some(env_vars) = config.env_vars {
         for (key, value) in env_vars {
             cmd.env(key, value);
@@ -281,13 +279,10 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
             match reader.read(&mut buffer) {
                 Ok(n) if n > 0 => {
                     let data = String::from_utf8_lossy(&buffer[..n]).to_string();
-
-                    // Write to file
                     if let Some(ref mut f) = log_file {
                         let _ = f.write_all(&buffer[..n]);
                         let _ = f.flush();
                     }
-
                     let _ = app_clone.emit(
                         "task-output",
                         serde_json::json!({ "id": task_id_clone, "data": data }),
@@ -350,6 +345,13 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
 }
 
 #[tauri::command]
+fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) {
+    println!("CMD: stop_task id={}", id);
+    stop_task_internal(&state, id.clone());
+    let _ = app.emit("task-updated", id);
+}
+
+#[tauri::command]
 fn update_task(
     state: State<'_, AppState>,
     id: String,
@@ -359,6 +361,7 @@ fn update_task(
     auto_retry: bool,
     env_vars: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
+    println!("CMD: update_task id={}", id);
     {
         let mut tasks = state.tasks.lock().unwrap();
         if let Some(config) = tasks.get_mut(&id) {
@@ -370,7 +373,7 @@ fn update_task(
         } else {
             return Err("Task not found".to_string());
         }
-    } // Lock released here
+    }
 
     state.save_config();
     Ok(())
@@ -396,7 +399,6 @@ fn get_log_history(state: State<'_, AppState>, id: String) -> String {
         return String::new();
     }
 
-    // Read last 10KB or so to avoid loading massive files
     use std::io::Seek;
     let mut file = match std::fs::File::open(&log_path) {
         Ok(f) => f,
@@ -405,7 +407,7 @@ fn get_log_history(state: State<'_, AppState>, id: String) -> String {
 
     let metadata = file.metadata().unwrap();
     let size = metadata.len();
-    let read_size = std::cmp::min(size, 50_000); // ~50KB
+    let read_size = std::cmp::min(size, 50_000);
 
     if let Err(_) = file.seek(std::io::SeekFrom::End(-(read_size as i64))) {
         let _ = file.seek(std::io::SeekFrom::Start(0));
