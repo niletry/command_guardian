@@ -160,30 +160,49 @@ fn get_tasks(state: State<'_, AppState>) -> Vec<TaskView> {
 
 #[tauri::command]
 fn delete_task(state: State<'_, AppState>, id: String) {
+    // Stop the task first (locks processes then statuses)
     let _ = stop_task_internal(&state, id.clone());
 
-    state.tasks.lock().unwrap().remove(&id);
-    state.statuses.lock().unwrap().remove(&id);
+    // Lock and remove from maps
+    {
+        // Consistency: we don't strictly need a global order if we release before next lock,
+        // but let's be careful.
+        state.tasks.lock().unwrap().remove(&id);
+        state.statuses.lock().unwrap().remove(&id);
+    }
 
     state.save_config();
+
+    let log_path = state.log_dir.join(format!("{}.log", id));
+    if log_path.exists() {
+        let _ = std::fs::remove_file(log_path);
+    }
 }
 
 fn stop_task_internal(state: &AppState, id: String) -> bool {
     let mut processes = state.processes.lock().unwrap();
-    if let Some(mut proc) = processes.remove(&id) {
+    let was_running = if let Some(mut proc) = processes.remove(&id) {
         let _ = proc.child.kill();
         let _ = proc.kill_tx.send(());
-
-        let mut statuses = state.statuses.lock().unwrap();
-        if let Some(s) = statuses.get_mut(&id) {
-            s.status = "stopped".to_string();
-            s.pid = None;
-            s.start_time = None;
-        }
         true
     } else {
         false
+    };
+
+    let mut statuses = state.statuses.lock().unwrap();
+    if let Some(s) = statuses.get_mut(&id) {
+        s.status = "stopped".to_string();
+        s.pid = None;
+        s.start_time = None;
     }
+
+    was_running
+}
+
+#[tauri::command]
+fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) {
+    stop_task_internal(&state, id.clone());
+    let _ = app.emit("task-updated", id);
 }
 
 #[tauri::command]
@@ -328,13 +347,6 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
     });
 
     Ok(())
-}
-
-#[tauri::command]
-fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) {
-    if stop_task_internal(&state, id.clone()) {
-        let _ = app.emit("task-updated", id);
-    }
 }
 
 #[tauri::command]
