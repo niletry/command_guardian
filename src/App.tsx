@@ -85,16 +85,14 @@ export default function App() {
 
   const handleDelete = async (id: string) => {
     console.log(">>> UI: Delete button clicked for id:", id);
-    if (confirm("Are you sure you want to delete this task?")) {
-      try {
-        console.log(">>> UI: Requesting delete_task:", id);
-        await invoke("delete_task", { id });
-        console.log(">>> UI: Delete command successful, refreshing...");
-        await refreshTasks();
-      } catch (err) {
-        console.error(">>> UI: Delete failed:", err);
-        alert("Delete failed: " + err);
-      }
+    try {
+      console.log(">>> UI: Requesting delete_task:", id);
+      await invoke("delete_task", { id });
+      console.log(">>> UI: Delete command successful, refreshing...");
+      await refreshTasks();
+    } catch (err) {
+      console.error(">>> UI: Delete failed:", err);
+      alert("Delete failed: " + err);
     }
   };
 
