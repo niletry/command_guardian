@@ -16,6 +16,7 @@ pub struct TaskConfig {
     pub command: String,
     pub tag: String,
     pub auto_retry: bool,
+    pub env_vars: Option<HashMap<String, String>>,
 }
 
 #[derive(Clone, Serialize, Debug)]
@@ -113,6 +114,7 @@ fn create_task(
     command: String,
     tag: String,
     auto_retry: bool,
+    env_vars: Option<HashMap<String, String>>,
 ) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     let config = TaskConfig {
@@ -121,6 +123,7 @@ fn create_task(
         command,
         tag,
         auto_retry,
+        env_vars,
     };
 
     let status = TaskStatus {
@@ -207,7 +210,7 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
         })
         .map_err(|e| e.to_string())?;
 
-    let cmd = if cfg!(target_os = "windows") {
+    let mut cmd = if cfg!(target_os = "windows") {
         let mut c = CommandBuilder::new("cmd");
         c.args(["/C", &config.command]);
         c
@@ -216,6 +219,13 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
         c.args(["-c", &config.command]);
         c
     };
+
+    // Apply environment variables
+    if let Some(env_vars) = config.env_vars {
+        for (key, value) in env_vars {
+            cmd.env(key, value);
+        }
+    }
 
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     let pid = child.process_id().unwrap_or(0);

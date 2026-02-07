@@ -4,6 +4,7 @@ export interface TaskConfig {
   command: string;
   tag: string;
   auto_retry: boolean;
+  env_vars?: Record<string, string>;
 }
 
 export interface TaskStatus {

@@ -33,6 +33,7 @@ export default function App() {
   const [newName, setNewName] = useState("");
   const [newCmd, setNewCmd] = useState("");
   const [newTag, setNewTag] = useState("Default");
+  const [newEnv, setNewEnv] = useState("");
 
   const refreshTasks = async () => {
     try {
@@ -75,10 +76,30 @@ export default function App() {
 
   const handleCreate = async () => {
     if (!newName || !newCmd) return;
-    await invoke("create_task", { name: newName, command: newCmd, tag: newTag, autoRetry: true });
+
+    // Parse env variables
+    const env_vars: Record<string, string> = {};
+    newEnv.split('\n').forEach(line => {
+      const parts = line.split('=');
+      if (parts.length >= 2) {
+        const key = parts[0].trim();
+        const value = parts.slice(1).join('=').trim();
+        if (key) env_vars[key] = value;
+      }
+    });
+
+    await invoke("create_task", { 
+      name: newName, 
+      command: newCmd, 
+      tag: newTag, 
+      autoRetry: true,
+      envVars: Object.keys(env_vars).length > 0 ? env_vars : null
+    });
+    
     setIsAddOpen(false);
     setNewName("");
     setNewCmd("");
+    setNewEnv("");
     refreshTasks();
   };
 
@@ -258,6 +279,15 @@ export default function App() {
                     onChange={e => setNewTag(e.target.value)}
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-white"
                     placeholder="Default"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-neutral-400 mb-1">Environment Variables (KEY=VALUE)</label>
+                <textarea 
+                    value={newEnv}
+                    onChange={e => setNewEnv(e.target.value)}
+                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 transition-colors h-20 text-white"
+                    placeholder="NODE_ENV=production&#10;PORT=3000"
                 />
               </div>
               <div className="flex justify-end gap-3 mt-4">
