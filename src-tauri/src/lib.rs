@@ -347,19 +347,21 @@ fn update_task(
     auto_retry: bool,
     env_vars: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
-    let mut tasks = state.tasks.lock().unwrap();
-    if let Some(config) = tasks.get_mut(&id) {
-        config.name = name;
-        config.command = command;
-        config.tag = tag;
-        config.auto_retry = auto_retry;
-        config.env_vars = env_vars;
+    {
+        let mut tasks = state.tasks.lock().unwrap();
+        if let Some(config) = tasks.get_mut(&id) {
+            config.name = name;
+            config.command = command;
+            config.tag = tag;
+            config.auto_retry = auto_retry;
+            config.env_vars = env_vars;
+        } else {
+            return Err("Task not found".to_string());
+        }
+    } // Lock released here
 
-        state.save_config();
-        Ok(())
-    } else {
-        Err("Task not found".to_string())
-    }
+    state.save_config();
+    Ok(())
 }
 
 #[tauri::command]
