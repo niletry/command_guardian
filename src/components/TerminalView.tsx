@@ -10,6 +10,11 @@ interface TerminalProps {
   taskName: string;
 }
 
+interface TaskOutputPayload {
+  id: string;
+  data: string;
+}
+
 export function TerminalView({ taskId, taskName }: TerminalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
@@ -53,8 +58,8 @@ export function TerminalView({ taskId, taskName }: TerminalProps) {
     handleResize();
 
     // Listen for Output
-    const unlistenPromise = listen('task-output', (event: any) => {
-      const payload = event.payload as { id: string; data: string };
+    const unlistenPromise = listen<TaskOutputPayload>('task-output', (event) => {
+      const payload = event.payload;
       if (payload.id === taskId) {
         term.write(payload.data);
       }

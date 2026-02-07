@@ -93,19 +93,20 @@ impl AppState {
         }
     }
 
-    pub fn save_config(&self) {
-        let tasks_map = self.tasks.lock().unwrap();
+    pub fn save_config(&self) -> Result<(), String> {
+        let tasks_map = self.tasks.lock().map_err(|e| e.to_string())?;
         let tasks_vec: Vec<TaskConfig> = tasks_map.values().cloned().collect();
         if let Ok(content) = serde_json::to_string_pretty(&tasks_vec) {
-            let _ = std::fs::write(&self.config_path, content);
+            std::fs::write(&self.config_path, content).map_err(|e| e.to_string())?;
         }
+        Ok(())
     }
 }
 
 // --- Helpers ---
 
-fn stop_task_internal(state: &AppState, id: &str) -> bool {
-    let mut processes = state.processes.lock().unwrap();
+fn stop_task_internal(state: &AppState, id: &str) -> Result<bool, String> {
+    let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
     let was_running = if let Some(mut proc) = processes.remove(id) {
         let _ = proc.child.kill();
         let _ = proc.kill_tx.send(());
@@ -114,19 +115,19 @@ fn stop_task_internal(state: &AppState, id: &str) -> bool {
         false
     };
 
-    let mut statuses = state.statuses.lock().unwrap();
+    let mut statuses = state.statuses.lock().map_err(|e| e.to_string())?;
     if let Some(s) = statuses.get_mut(id) {
         s.status = "stopped".to_string();
         s.pid = None;
         s.start_time = None;
     }
 
-    was_running
+    Ok(was_running)
 }
 
 // --- Commands ---
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 fn create_task(
     state: State<'_, AppState>,
     name: String,
@@ -134,7 +135,7 @@ fn create_task(
     tag: String,
     auto_retry: bool,
     env_vars: Option<HashMap<String, String>>,
-) -> String {
+) -> Result<String, String> {
     let id = uuid::Uuid::new_v4().to_string();
     let config = TaskConfig {
         id: id.clone(),
@@ -153,20 +154,20 @@ fn create_task(
     };
 
     {
-        let mut tasks = state.tasks.lock().unwrap();
-        let mut statuses = state.statuses.lock().unwrap();
+        let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+        let mut statuses = state.statuses.lock().map_err(|e| e.to_string())?;
         tasks.insert(id.clone(), config);
         statuses.insert(id.clone(), status);
     }
 
-    state.save_config();
-    id
+    let _ = state.save_config();
+    Ok(id)
 }
 
-#[tauri::command]
-fn get_tasks(state: State<'_, AppState>) -> Vec<TaskView> {
-    let tasks_map = state.tasks.lock().unwrap();
-    let statuses_map = state.statuses.lock().unwrap();
+#[tauri::command(rename_all = "camelCase")]
+fn get_tasks(state: State<'_, AppState>) -> Result<Vec<TaskView>, String> {
+    let tasks_map = state.tasks.lock().map_err(|e| e.to_string())?;
+    let statuses_map = state.statuses.lock().map_err(|e| e.to_string())?;
 
     let mut views = Vec::new();
     for (id, config) in tasks_map.iter() {
@@ -177,38 +178,41 @@ fn get_tasks(state: State<'_, AppState>) -> Vec<TaskView> {
             });
         }
     }
-    views
+    Ok(views)
 }
 
 #[tauri::command]
-fn delete_task(state: State<'_, AppState>, id: String) {
-    println!(">>> BACKEND: delete_task id={}", id);
-    stop_task_internal(&state, &id);
+fn delete_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<(), String> {
+    println!(">>> BACKEND: delete_task request received for id: {}", id);
+    let _ = stop_task_internal(&state, &id)?;
 
     {
-        let mut tasks = state.tasks.lock().unwrap();
-        let mut statuses = state.statuses.lock().unwrap();
+        let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+        let mut statuses = state.statuses.lock().map_err(|e| e.to_string())?;
         tasks.remove(&id);
         statuses.remove(&id);
     }
 
-    state.save_config();
+    let _ = state.save_config();
 
     let log_path = state.log_dir.join(format!("{}.log", id));
     if log_path.exists() {
         let _ = std::fs::remove_file(log_path);
     }
+
+    let _ = app.emit("task-updated", id);
+    Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<(), String> {
     let config = {
-        let tasks = state.tasks.lock().unwrap();
+        let tasks = state.tasks.lock().map_err(|e| e.to_string())?;
         tasks.get(&id).cloned().ok_or("Task not found")?
     };
 
     {
-        let processes = state.processes.lock().unwrap();
+        let processes = state.processes.lock().map_err(|e| e.to_string())?;
         if processes.contains_key(&id) {
             return Ok(());
         }
@@ -244,7 +248,7 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
     let pid = child.process_id().unwrap_or(0);
 
     {
-        let mut statuses = state.statuses.lock().unwrap();
+        let mut statuses = state.statuses.lock().map_err(|e| e.to_string())?;
         if let Some(s) = statuses.get_mut(&id) {
             s.status = "running".to_string();
             s.pid = Some(pid);
@@ -297,7 +301,11 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
         kill_tx: tx,
     };
 
-    state.processes.lock().unwrap().insert(id.clone(), process);
+    state
+        .processes
+        .lock()
+        .map_err(|e| e.to_string())?
+        .insert(id.clone(), process);
 
     let processes_arc = state.processes.clone();
     let statuses_arc = state.statuses.clone();
@@ -307,7 +315,10 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
     thread::spawn(move || loop {
         thread::sleep(Duration::from_millis(500));
         let is_alive = {
-            let mut processes = processes_arc.lock().unwrap();
+            let mut processes = match processes_arc.lock() {
+                Ok(p) => p,
+                Err(_) => break, // Poisoned
+            };
             if let Some(proc) = processes.get_mut(&id_clone) {
                 match proc.child.try_wait() {
                     Ok(Some(_)) => false,
@@ -320,11 +331,17 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
         };
 
         if !is_alive {
-            let mut processes = processes_arc.lock().unwrap();
+            let mut processes = match processes_arc.lock() {
+                Ok(p) => p,
+                Err(_) => break,
+            };
             if processes.contains_key(&id_clone) {
                 processes.remove(&id_clone);
                 {
-                    let mut statuses = statuses_arc.lock().unwrap();
+                    let mut statuses = match statuses_arc.lock() {
+                        Ok(s) => s,
+                        Err(_) => break,
+                    };
                     if let Some(s) = statuses.get_mut(&id_clone) {
                         s.status = "stopped".to_string();
                         s.pid = None;
@@ -340,13 +357,14 @@ fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<
     Ok(())
 }
 
-#[tauri::command]
-fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) {
-    stop_task_internal(&state, &id);
+#[tauri::command(rename_all = "camelCase")]
+fn stop_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<(), String> {
+    let _ = stop_task_internal(&state, &id)?;
     let _ = app.emit("task-updated", id);
+    Ok(())
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 fn update_task(
     state: State<'_, AppState>,
     id: String,
@@ -357,7 +375,7 @@ fn update_task(
     env_vars: Option<HashMap<String, String>>,
 ) -> Result<(), String> {
     {
-        let mut tasks = state.tasks.lock().unwrap();
+        let mut tasks = state.tasks.lock().map_err(|e| e.to_string())?;
         if let Some(config) = tasks.get_mut(&id) {
             config.name = name;
             config.command = command;
@@ -369,13 +387,13 @@ fn update_task(
         }
     }
 
-    state.save_config();
+    let _ = state.save_config();
     Ok(())
 }
 
-#[tauri::command]
-fn resize_pty(state: State<'_, AppState>, id: String, rows: u16, cols: u16) {
-    let mut processes = state.processes.lock().unwrap();
+#[tauri::command(rename_all = "camelCase")]
+fn resize_pty(state: State<'_, AppState>, id: String, rows: u16, cols: u16) -> Result<(), String> {
+    let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
     if let Some(proc) = processes.get_mut(&id) {
         let _ = proc.master.resize(PtySize {
             rows,
@@ -384,21 +402,19 @@ fn resize_pty(state: State<'_, AppState>, id: String, rows: u16, cols: u16) {
             pixel_height: 0,
         });
     }
+    Ok(())
 }
 
-#[tauri::command]
-fn get_log_history(state: State<'_, AppState>, id: String) -> String {
+#[tauri::command(rename_all = "camelCase")]
+fn get_log_history(state: State<'_, AppState>, id: String) -> Result<String, String> {
     let log_path = state.log_dir.join(format!("{}.log", id));
     if !log_path.exists() {
-        return String::new();
+        return Ok(String::new());
     }
 
-    let mut file = match std::fs::File::open(&log_path) {
-        Ok(f) => f,
-        Err(_) => return String::new(),
-    };
+    let mut file = std::fs::File::open(&log_path).map_err(|e| e.to_string())?;
 
-    let metadata = file.metadata().unwrap();
+    let metadata = file.metadata().map_err(|e| e.to_string())?;
     let size = metadata.len();
     let read_size = std::cmp::min(size, 50_000);
 
@@ -407,24 +423,26 @@ fn get_log_history(state: State<'_, AppState>, id: String) -> String {
     }
 
     let mut buffer = Vec::new();
-    file.read_to_end(&mut buffer).unwrap_or_default();
-    String::from_utf8_lossy(&buffer).to_string()
+    file.read_to_end(&mut buffer).map_err(|e| e.to_string())?;
+    Ok(String::from_utf8_lossy(&buffer).to_string())
 }
 
-#[tauri::command]
-fn clear_log_history(state: State<'_, AppState>, id: String) {
+#[tauri::command(rename_all = "camelCase")]
+fn clear_log_history(state: State<'_, AppState>, id: String) -> Result<(), String> {
     let log_path = state.log_dir.join(format!("{}.log", id));
     if log_path.exists() {
         let _ = std::fs::remove_file(log_path);
     }
+    Ok(())
 }
 
-#[tauri::command]
-fn write_to_pty(state: State<'_, AppState>, id: String, data: String) {
-    let mut processes = state.processes.lock().unwrap();
+#[tauri::command(rename_all = "camelCase")]
+fn write_to_pty(state: State<'_, AppState>, id: String, data: String) -> Result<(), String> {
+    let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
     if let Some(proc) = processes.get_mut(&id) {
         let _ = write!(proc.writer, "{}", data);
     }
+    Ok(())
 }
 
 // --- Entry Point ---

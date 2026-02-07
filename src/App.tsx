@@ -39,7 +39,6 @@ export default function App() {
   const refreshTasks = async () => {
     try {
       const data = await invoke<TaskView[]>("get_tasks");
-      console.log(">>> UI: Fetched tasks:", data.length);
       setTasks(data);
     } catch (err) {
       console.error(">>> UI: Failed to fetch tasks:", err);
@@ -47,7 +46,6 @@ export default function App() {
   };
 
   useEffect(() => {
-    console.log(">>> UI: App mounted");
     refreshTasks();
     const unlisten = listen("task-updated", (e) => {
         console.log(">>> UI: Received task-updated event for:", e.payload);
@@ -66,7 +64,6 @@ export default function App() {
 
   const handleStart = async (id: string) => {
     try {
-      console.log(">>> UI: Requesting start_task:", id);
       await invoke("start_task", { id });
     } catch (err) {
       console.error(">>> UI: Start failed:", err);
@@ -76,7 +73,6 @@ export default function App() {
 
   const handleStop = async (id: string) => {
     try {
-      console.log(">>> UI: Requesting stop_task:", id);
       await invoke("stop_task", { id });
     } catch (err) {
       console.error(">>> UI: Stop failed:", err);
@@ -84,17 +80,11 @@ export default function App() {
   };
 
   const handleDelete = async (id: string) => {
-    console.log(">>> UI: Delete button clicked for id:", id);
-    if (confirm("Are you sure you want to delete this task?")) {
-      try {
-        console.log(">>> UI: Requesting delete_task:", id);
-        await invoke("delete_task", { id });
-        console.log(">>> UI: Delete command successful, refreshing...");
-        await refreshTasks();
-      } catch (err) {
-        console.error(">>> UI: Delete failed:", err);
-        alert("Delete failed: " + err);
-      }
+    try {
+      await invoke("delete_task", { id });
+      await refreshTasks();
+    } catch (err) {
+      console.error(">>> UI: Delete failed:", err);
     }
   };
 
@@ -112,8 +102,7 @@ export default function App() {
     });
 
     try {
-        if (editingTask) {
-          console.log(">>> UI: Requesting update_task:", editingTask.config.id);
+      if (editingTask) {
           await invoke("update_task", {
             id: editingTask.config.id,
             name: newName,
@@ -122,8 +111,7 @@ export default function App() {
             autoRetry: true,
             envVars: Object.keys(env_vars).length > 0 ? env_vars : null
           });
-        } else {
-          console.log(">>> UI: Requesting create_task");
+      } else {
           await invoke("create_task", { 
             name: newName, 
             command: newCmd, 
@@ -287,7 +275,11 @@ export default function App() {
                     <Edit2 className="w-5 h-5" />
                   </button>
                   
-                  <button onClick={() => handleDelete(task.config.id)} className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/10">
+                  <button
+                    onClick={() => handleDelete(task.config.id)}
+                    className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/10"
+                    title="Delete Task"
+                  >
                     <Trash2 className="w-5 h-5" />
                   </button>
                 </div>
