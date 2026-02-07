@@ -1,0 +1,29 @@
+name: "Build Check"
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+
+jobs:
+  check:
+    strategy:
+      fail-fast: false
+      matrix:
+        platform: [macos-latest, windows-latest]
+
+    runs-on: ${{ matrix.platform }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: setup node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+      - name: install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+      - name: install frontend dependencies
+        run: npm install
+      - name: build check
+        run: npm run tauri build -- --no-bundle
