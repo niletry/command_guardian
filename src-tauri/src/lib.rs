@@ -105,6 +105,215 @@ impl AppState {
 
 // --- Helpers ---
 
+fn start_task_internal(state: &AppState, app: AppHandle, id: String) -> Result<(), String> {
+    let config = {
+        let tasks = state.tasks.lock().map_err(|e| e.to_string())?;
+        tasks.get(&id).cloned().ok_or("Task not found")?
+    };
+
+    let pty_system = NativePtySystem::default();
+    let pair = pty_system
+        .openpty(PtySize {
+            rows: 24,
+            cols: 80,
+            pixel_width: 0,
+            pixel_height: 0,
+        })
+        .map_err(|e| e.to_string())?;
+
+    let mut cmd = if cfg!(target_os = "windows") {
+        let mut c = CommandBuilder::new("cmd");
+        c.args(["/C", &config.command]);
+        c
+    } else {
+        let mut c = CommandBuilder::new("sh");
+        c.args(["-c", &config.command]);
+        c
+    };
+
+    if let Some(env_vars) = config.env_vars {
+        for (key, value) in env_vars {
+            cmd.env(key, value);
+        }
+    }
+
+    // Lock processes and status early to ensure atomicity
+    let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
+    let mut statuses = state.statuses.lock().map_err(|e| e.to_string())?;
+
+    if processes.contains_key(&id) {
+        return Ok(());
+    }
+
+    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    let pid = child.process_id().unwrap_or(0);
+
+    if let Some(s) = statuses.get_mut(&id) {
+        s.status = "running".to_string();
+        s.pid = Some(pid);
+        s.start_time = Some(chrono::Utc::now().timestamp() as u64);
+    }
+
+    app.emit("task-updated", id.clone()).unwrap();
+
+    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
+    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
+    let (tx, rx) = std::sync::mpsc::channel();
+    let task_id_clone = id.clone();
+    let app_clone = app.clone();
+    let log_path = state.log_dir.join(format!("{}.log", id));
+
+    thread::spawn(move || {
+        let mut buffer = [0u8; 4096];
+        let mut log_file = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(log_path)
+            .ok();
+
+        loop {
+            if rx.try_recv().is_ok() {
+                break;
+            }
+            match reader.read(&mut buffer) {
+                Ok(n) if n > 0 => {
+                    if let Some(ref mut f) = log_file {
+                        let _ = f.write_all(&buffer[..n]);
+                        let _ = f.flush();
+                    }
+                    let data = String::from_utf8_lossy(&buffer[..n]).to_string();
+                    let _ = app_clone.emit(
+                        "task-output",
+                        serde_json::json!({ "id": task_id_clone, "data": data }),
+                    );
+                }
+                Ok(_) => break,
+                Err(_) => break,
+            }
+        }
+    });
+
+    let process = RunningProcess {
+        master: pair.master,
+        child,
+        writer,
+        kill_tx: tx,
+    };
+
+    processes.insert(id.clone(), process);
+
+    // Explicitly drop locks before starting the monitor thread
+    drop(processes);
+    drop(statuses);
+
+    let tasks_arc = state.tasks.clone();
+    let processes_arc = state.processes.clone();
+    let statuses_arc = state.statuses.clone();
+    let id_clone = id.clone();
+    let app_clone_2 = app.clone();
+    let log_dir = state.log_dir.clone();
+    let config_path = state.config_path.clone();
+
+    thread::spawn(move || loop {
+        thread::sleep(Duration::from_millis(500));
+        let is_alive = {
+            let mut processes = match processes_arc.lock() {
+                Ok(p) => p,
+                Err(_) => break, // Poisoned
+            };
+            if let Some(proc) = processes.get_mut(&id_clone) {
+                match proc.child.try_wait() {
+                    Ok(Some(_)) => false,
+                    Ok(None) => true,
+                    Err(_) => false,
+                }
+            } else {
+                false
+            }
+        };
+
+        if !is_alive {
+            let mut processes = match processes_arc.lock() {
+                Ok(p) => p,
+                Err(_) => break,
+            };
+
+            // If it's still in processes map, it means it wasn't manually stopped
+            if processes.contains_key(&id_clone) {
+                processes.remove(&id_clone);
+                {
+                    let mut statuses = match statuses_arc.lock() {
+                        Ok(s) => s,
+                        Err(_) => break,
+                    };
+                    if let Some(s) = statuses.get_mut(&id_clone) {
+                        s.status = "stopped".to_string();
+                        s.pid = None;
+                        s.start_time = None;
+                    }
+                }
+                let _ = app_clone_2.emit("task-updated", id_clone.clone());
+
+                // Check for auto-restart
+                let should_restart = {
+                    let tasks = match tasks_arc.lock() {
+                        Ok(t) => t,
+                        Err(_) => break,
+                    };
+                    tasks.get(&id_clone).map(|c| c.auto_retry).unwrap_or(false)
+                };
+
+                if should_restart {
+                    println!(
+                        ">>> BACKEND: Task {} exited unexpectedly, restarting in 2s...",
+                        id_clone
+                    );
+                    // Longer sleep to prevent rapid crash loops
+                    thread::sleep(Duration::from_secs(2));
+
+                    let restart_app = app_clone_2.clone();
+                    let restart_id = id_clone.clone();
+
+                    // Use a temporary AppState-like structure for the helper
+                    // or just pass the arcs if we refactor start_task_internal to take them.
+                    // For now, let's keep it simple and just re-use the handles we have.
+                    let restart_tasks = tasks_arc.clone();
+                    let restart_processes = processes_arc.clone();
+                    let restart_statuses = statuses_arc.clone();
+                    let restart_log_dir = log_dir.clone();
+                    let restart_config_path = config_path.clone();
+
+                    thread::spawn(move || {
+                        let state = AppState {
+                            tasks: restart_tasks,
+                            processes: restart_processes,
+                            statuses: restart_statuses,
+                            log_dir: restart_log_dir,
+                            config_path: restart_config_path,
+                        };
+                        if let Err(e) =
+                            start_task_internal(&state, restart_app.clone(), restart_id.clone())
+                        {
+                            println!(
+                                ">>> BACKEND: Failed to auto-restart task {}: {}",
+                                restart_id, e
+                            );
+                        } else {
+                            println!(
+                                ">>> BACKEND: Task {} auto-restarted successfully",
+                                restart_id
+                            );
+                        }
+                    });
+                }
+            }
+            break;
+        }
+    });
+
+    Ok(())
+}
+
 fn stop_task_internal(state: &AppState, id: &str) -> Result<bool, String> {
     let mut processes = state.processes.lock().map_err(|e| e.to_string())?;
     let was_running = if let Some(mut proc) = processes.remove(id) {
@@ -206,155 +415,7 @@ fn delete_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result
 
 #[tauri::command(rename_all = "camelCase")]
 fn start_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<(), String> {
-    let config = {
-        let tasks = state.tasks.lock().map_err(|e| e.to_string())?;
-        tasks.get(&id).cloned().ok_or("Task not found")?
-    };
-
-    {
-        let processes = state.processes.lock().map_err(|e| e.to_string())?;
-        if processes.contains_key(&id) {
-            return Ok(());
-        }
-    }
-
-    let pty_system = NativePtySystem::default();
-    let pair = pty_system
-        .openpty(PtySize {
-            rows: 24,
-            cols: 80,
-            pixel_width: 0,
-            pixel_height: 0,
-        })
-        .map_err(|e| e.to_string())?;
-
-    let mut cmd = if cfg!(target_os = "windows") {
-        let mut c = CommandBuilder::new("cmd");
-        c.args(["/C", &config.command]);
-        c
-    } else {
-        let mut c = CommandBuilder::new("sh");
-        c.args(["-c", &config.command]);
-        c
-    };
-
-    if let Some(env_vars) = config.env_vars {
-        for (key, value) in env_vars {
-            cmd.env(key, value);
-        }
-    }
-
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-    let pid = child.process_id().unwrap_or(0);
-
-    {
-        let mut statuses = state.statuses.lock().map_err(|e| e.to_string())?;
-        if let Some(s) = statuses.get_mut(&id) {
-            s.status = "running".to_string();
-            s.pid = Some(pid);
-            s.start_time = Some(chrono::Utc::now().timestamp() as u64);
-        }
-    }
-    app.emit("task-updated", id.clone()).unwrap();
-
-    let mut reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
-    let writer = pair.master.take_writer().map_err(|e| e.to_string())?;
-    let (tx, rx) = std::sync::mpsc::channel();
-    let task_id_clone = id.clone();
-    let app_clone = app.clone();
-    let log_path = state.log_dir.join(format!("{}.log", id));
-
-    thread::spawn(move || {
-        let mut buffer = [0u8; 4096];
-        let mut log_file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(log_path)
-            .ok();
-
-        loop {
-            if rx.try_recv().is_ok() {
-                break;
-            }
-            match reader.read(&mut buffer) {
-                Ok(n) if n > 0 => {
-                    if let Some(ref mut f) = log_file {
-                        let _ = f.write_all(&buffer[..n]);
-                        let _ = f.flush();
-                    }
-                    let data = String::from_utf8_lossy(&buffer[..n]).to_string();
-                    let _ = app_clone.emit(
-                        "task-output",
-                        serde_json::json!({ "id": task_id_clone, "data": data }),
-                    );
-                }
-                Ok(_) => break,
-                Err(_) => break,
-            }
-        }
-    });
-
-    let process = RunningProcess {
-        master: pair.master,
-        child,
-        writer,
-        kill_tx: tx,
-    };
-
-    state
-        .processes
-        .lock()
-        .map_err(|e| e.to_string())?
-        .insert(id.clone(), process);
-
-    let processes_arc = state.processes.clone();
-    let statuses_arc = state.statuses.clone();
-    let id_clone = id.clone();
-    let app_clone_2 = app.clone();
-
-    thread::spawn(move || loop {
-        thread::sleep(Duration::from_millis(500));
-        let is_alive = {
-            let mut processes = match processes_arc.lock() {
-                Ok(p) => p,
-                Err(_) => break, // Poisoned
-            };
-            if let Some(proc) = processes.get_mut(&id_clone) {
-                match proc.child.try_wait() {
-                    Ok(Some(_)) => false,
-                    Ok(None) => true,
-                    Err(_) => false,
-                }
-            } else {
-                false
-            }
-        };
-
-        if !is_alive {
-            let mut processes = match processes_arc.lock() {
-                Ok(p) => p,
-                Err(_) => break,
-            };
-            if processes.contains_key(&id_clone) {
-                processes.remove(&id_clone);
-                {
-                    let mut statuses = match statuses_arc.lock() {
-                        Ok(s) => s,
-                        Err(_) => break,
-                    };
-                    if let Some(s) = statuses.get_mut(&id_clone) {
-                        s.status = "stopped".to_string();
-                        s.pid = None;
-                        s.start_time = None;
-                    }
-                }
-                let _ = app_clone_2.emit("task-updated", id_clone.clone());
-            }
-            break;
-        }
-    });
-
-    Ok(())
+    start_task_internal(&state, app, id)
 }
 
 #[tauri::command(rename_all = "camelCase")]

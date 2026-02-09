@@ -35,6 +35,7 @@ export default function App() {
   const [newCmd, setNewCmd] = useState("");
   const [newTag, setNewTag] = useState("Default");
   const [newEnv, setNewEnv] = useState("");
+  const [autoRetry, setAutoRetry] = useState(false);
 
   const refreshTasks = async () => {
     try {
@@ -108,7 +109,7 @@ export default function App() {
             name: newName,
             command: newCmd,
             tag: newTag,
-            autoRetry: true,
+            autoRetry: autoRetry,
             envVars: Object.keys(env_vars).length > 0 ? env_vars : null
           });
       } else {
@@ -116,7 +117,7 @@ export default function App() {
             name: newName, 
             command: newCmd, 
             tag: newTag, 
-            autoRetry: true,
+            autoRetry: autoRetry,
             envVars: Object.keys(env_vars).length > 0 ? env_vars : null
           });
         }
@@ -126,6 +127,7 @@ export default function App() {
         setNewName("");
         setNewCmd("");
         setNewEnv("");
+        setAutoRetry(false);
         await refreshTasks();
     } catch (err) {
         console.error(">>> UI: Save failed:", err);
@@ -138,6 +140,7 @@ export default function App() {
     setNewName(task.config.name);
     setNewCmd(task.config.command);
     setNewTag(task.config.tag);
+    setAutoRetry(task.config.auto_retry);
     const envStr = Object.entries(task.config.env_vars || {})
       .map(([k, v]) => `${k}=${v}`)
       .join('\n');
@@ -151,6 +154,7 @@ export default function App() {
     setNewName("");
     setNewCmd("");
     setNewEnv("");
+    setAutoRetry(false);
   };
 
   const uniqueTags = ["All", ...Array.from(new Set(tasks.map(t => t.config.tag))).sort()];
@@ -347,6 +351,18 @@ export default function App() {
                     className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 transition-colors h-20 text-white"
                     placeholder="NODE_ENV=production&#10;PORT=3000"
                 />
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                    type="checkbox"
+                    id="autoRetry"
+                    checked={autoRetry}
+                    onChange={e => setAutoRetry(e.target.checked)}
+                    className="w-4 h-4 rounded border-neutral-800 bg-neutral-950 text-blue-600 focus:ring-blue-500 focus:ring-offset-neutral-900"
+                />
+                <label htmlFor="autoRetry" className="text-sm font-medium text-neutral-400 cursor-pointer">
+                    Auto Restart on Exit
+                </label>
               </div>
               <div className="flex justify-end gap-3 mt-4">
                 <button onClick={closeAddModal} className="px-4 py-2 text-sm text-neutral-400 hover:text-white">Cancel</button>
