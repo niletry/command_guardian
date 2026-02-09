@@ -81,6 +81,7 @@ export default function App() {
   };
 
   const handleDelete = async (id: string) => {
+    if (!confirm("Are you sure you want to delete this task? This will also delete its logs.")) return;
     try {
       await invoke("delete_task", { id });
       await refreshTasks();

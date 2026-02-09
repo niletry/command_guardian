@@ -96,9 +96,8 @@ impl AppState {
     pub fn save_config(&self) -> Result<(), String> {
         let tasks_map = self.tasks.lock().map_err(|e| e.to_string())?;
         let tasks_vec: Vec<TaskConfig> = tasks_map.values().cloned().collect();
-        if let Ok(content) = serde_json::to_string_pretty(&tasks_vec) {
-            std::fs::write(&self.config_path, content).map_err(|e| e.to_string())?;
-        }
+        let content = serde_json::to_string_pretty(&tasks_vec).map_err(|e| e.to_string())?;
+        std::fs::write(&self.config_path, content).map_err(|e| e.to_string())?;
         Ok(())
     }
 }
@@ -390,7 +389,7 @@ fn get_tasks(state: State<'_, AppState>) -> Result<Vec<TaskView>, String> {
     Ok(views)
 }
 
-#[tauri::command]
+#[tauri::command(rename_all = "camelCase")]
 fn delete_task(state: State<'_, AppState>, app: AppHandle, id: String) -> Result<(), String> {
     println!(">>> BACKEND: delete_task request received for id: {}", id);
     let _ = stop_task_internal(&state, &id)?;
