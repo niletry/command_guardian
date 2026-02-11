@@ -27,7 +27,7 @@ export default function App() {
   const [tasks, setTasks] = useState<TaskView[]>([]);
   const [filter, setFilter] = useState("All");
   const [terminalTask, setTerminalTask] = useState<TaskView | null>(null);
-  
+
   // Add Task Form State
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [editingTask, setEditingTask] = useState<TaskView | null>(null);
@@ -48,13 +48,12 @@ export default function App() {
 
   useEffect(() => {
     refreshTasks();
-    const unlisten = listen("task-updated", (e) => {
-        console.log(">>> UI: Received task-updated event for:", e.payload);
-        refreshTasks();
+    const unlisten = listen("task-updated", () => {
+      refreshTasks();
     });
-    
+
     const interval = setInterval(() => {
-        setTasks(prev => [...prev]);
+      setTasks(prev => [...prev]);
     }, 1000);
 
     return () => {
@@ -81,7 +80,6 @@ export default function App() {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm("Are you sure you want to delete this task? This will also delete its logs.")) return;
     try {
       await invoke("delete_task", { id });
       await refreshTasks();
@@ -105,34 +103,34 @@ export default function App() {
 
     try {
       if (editingTask) {
-          await invoke("update_task", {
-            id: editingTask.config.id,
-            name: newName,
-            command: newCmd,
-            tag: newTag,
-            autoRetry: autoRetry,
-            envVars: Object.keys(env_vars).length > 0 ? env_vars : null
-          });
+        await invoke("update_task", {
+          id: editingTask.config.id,
+          name: newName,
+          command: newCmd,
+          tag: newTag,
+          autoRetry: autoRetry,
+          envVars: Object.keys(env_vars).length > 0 ? env_vars : null
+        });
       } else {
-          await invoke("create_task", { 
-            name: newName, 
-            command: newCmd, 
-            tag: newTag, 
-            autoRetry: autoRetry,
-            envVars: Object.keys(env_vars).length > 0 ? env_vars : null
-          });
-        }
-        
-        setIsAddOpen(false);
-        setEditingTask(null);
-        setNewName("");
-        setNewCmd("");
-        setNewEnv("");
-        setAutoRetry(false);
-        await refreshTasks();
+        await invoke("create_task", {
+          name: newName,
+          command: newCmd,
+          tag: newTag,
+          autoRetry: autoRetry,
+          envVars: Object.keys(env_vars).length > 0 ? env_vars : null
+        });
+      }
+
+      setIsAddOpen(false);
+      setEditingTask(null);
+      setNewName("");
+      setNewCmd("");
+      setNewEnv("");
+      setAutoRetry(false);
+      await refreshTasks();
     } catch (err) {
-        console.error(">>> UI: Save failed:", err);
-        alert("Save failed: " + err);
+      console.error(">>> UI: Save failed:", err);
+      alert("Save failed: " + err);
     }
   };
 
@@ -183,8 +181,8 @@ export default function App() {
               onClick={() => setFilter(tag)}
               className={cn(
                 "flex items-center gap-2 px-3 py-2 rounded-md text-sm transition-all duration-200",
-                filter === tag 
-                  ? "bg-blue-600/10 text-blue-400 font-medium" 
+                filter === tag
+                  ? "bg-blue-600/10 text-blue-400 font-medium"
                   : "text-neutral-400 hover:bg-neutral-800 hover:text-neutral-200"
               )}
             >
@@ -200,13 +198,13 @@ export default function App() {
         </div>
 
         <div className="mt-auto pt-4">
-            <button 
-                onClick={() => setIsAddOpen(true)}
-                className="w-full flex items-center justify-center gap-2 bg-neutral-100 text-neutral-900 hover:bg-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-white/5"
-            >
-                <Plus className="w-4 h-4" />
-                New Task
-            </button>
+          <button
+            onClick={() => setIsAddOpen(true)}
+            className="w-full flex items-center justify-center gap-2 bg-neutral-100 text-neutral-900 hover:bg-white py-2.5 rounded-lg font-medium transition-colors shadow-lg shadow-white/5"
+          >
+            <Plus className="w-4 h-4" />
+            New Task
+          </button>
         </div>
       </div>
 
@@ -216,7 +214,7 @@ export default function App() {
           <div className="flex items-center justify-between mb-8">
             <h2 className="text-2xl font-bold">Dashboard <span className="text-neutral-500 text-lg font-normal ml-2">/ {filter}</span></h2>
             <div className="text-sm text-neutral-500 font-mono">
-                {tasks.filter(t => t.status.status === 'running').length} Running
+              {tasks.filter(t => t.status.status === 'running').length} Running
             </div>
           </div>
 
@@ -226,10 +224,10 @@ export default function App() {
                 <div className="flex justify-between items-start mb-4">
                   <div className="overflow-hidden flex-1 mr-4">
                     <div className="flex items-center gap-2 mb-1 overflow-hidden">
-                        <h3 className="font-semibold text-lg truncate">{task.config.name}</h3>
-                        <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-neutral-700 text-neutral-400 font-medium border border-neutral-600">
-                            {task.config.tag}
-                        </span>
+                      <h3 className="font-semibold text-lg truncate">{task.config.name}</h3>
+                      <span className="shrink-0 text-[10px] px-2 py-0.5 rounded-full bg-neutral-700 text-neutral-400 font-medium border border-neutral-600">
+                        {task.config.tag}
+                      </span>
                     </div>
                     <code className="text-xs text-neutral-500 font-mono block truncate" title={task.config.command}>
                       $ {task.config.command}
@@ -237,8 +235,8 @@ export default function App() {
                   </div>
                   <div className={cn(
                     "shrink-0 px-2.5 py-1 rounded-full text-xs font-bold tracking-wide flex items-center gap-1.5 border",
-                    task.status.status === "running" 
-                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20" 
+                    task.status.status === "running"
+                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
                       : "bg-neutral-700/30 text-neutral-400 border-neutral-700"
                   )}>
                     <div className={cn("w-1.5 h-1.5 rounded-full", task.status.status === "running" ? "bg-emerald-400 animate-pulse" : "bg-neutral-500")} />
@@ -247,18 +245,18 @@ export default function App() {
                 </div>
 
                 <div className="grid grid-cols-3 gap-2 mb-5">
-                    <div className="bg-neutral-950/30 rounded-lg p-2 border border-neutral-800">
-                        <span className="text-xs text-neutral-500 block mb-0.5">PID</span>
-                        <span className="font-mono text-sm text-neutral-300">{task.status.pid || "—"}</span>
-                    </div>
-                    <div className="bg-neutral-950/30 rounded-lg p-2 border border-neutral-800">
-                        <span className="text-xs text-neutral-500 block mb-0.5">Uptime</span>
-                        <span className="font-mono text-sm text-neutral-300">{formatDuration(task.status.start_time)}</span>
-                    </div>
-                    <div className="bg-neutral-950/30 rounded-lg p-2 border border-neutral-800">
-                        <span className="text-xs text-neutral-500 block mb-0.5">Status</span>
-                        <span className="font-mono text-[10px] uppercase text-neutral-400">{task.status.status}</span>
-                    </div>
+                  <div className="bg-neutral-950/30 rounded-lg p-2 border border-neutral-800">
+                    <span className="text-xs text-neutral-500 block mb-0.5">PID</span>
+                    <span className="font-mono text-sm text-neutral-300">{task.status.pid || "—"}</span>
+                  </div>
+                  <div className="bg-neutral-950/30 rounded-lg p-2 border border-neutral-800">
+                    <span className="text-xs text-neutral-500 block mb-0.5">Uptime</span>
+                    <span className="font-mono text-sm text-neutral-300">{formatDuration(task.status.start_time)}</span>
+                  </div>
+                  <div className="bg-neutral-950/30 rounded-lg p-2 border border-neutral-800">
+                    <span className="text-xs text-neutral-500 block mb-0.5">Status</span>
+                    <span className="font-mono text-[10px] uppercase text-neutral-400">{task.status.status}</span>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2">
@@ -271,7 +269,7 @@ export default function App() {
                       <Play className="w-4 h-4" /> Start
                     </button>
                   )}
-                  
+
                   <button onClick={() => setTerminalTask(task)} className="p-2 text-neutral-400 hover:text-blue-400 hover:bg-blue-500/10 rounded-lg transition-colors border border-transparent hover:border-blue-500/10">
                     <TerminalIcon className="w-5 h-5" />
                   </button>
@@ -279,7 +277,7 @@ export default function App() {
                   <button onClick={() => startEdit(task)} className="p-2 text-neutral-400 hover:text-amber-400 hover:bg-amber-500/10 rounded-lg transition-colors border border-transparent hover:border-amber-500/10">
                     <Edit2 className="w-5 h-5" />
                   </button>
-                  
+
                   <button
                     onClick={() => handleDelete(task.config.id)}
                     className="p-2 text-neutral-400 hover:text-red-400 hover:bg-red-500/10 rounded-lg transition-colors border border-transparent hover:border-red-500/10"
@@ -297,17 +295,17 @@ export default function App() {
       {/* Terminal Modal */}
       {terminalTask && (
         <div className="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-8">
-            <div className="w-full max-w-5xl h-[80vh] bg-neutral-900 rounded-xl shadow-2xl flex flex-col border border-neutral-800 relative">
-                <button 
-                    onClick={() => setTerminalTask(null)}
-                    className="absolute -top-3 -right-3 w-8 h-8 bg-neutral-700 text-white rounded-full flex items-center justify-center hover:bg-neutral-600 shadow-lg border border-neutral-600 z-10 text-xl font-bold"
-                >
-                    &times;
-                </button>
-                <div className="flex-1 p-2">
-                    <TerminalView taskId={terminalTask.config.id} taskName={terminalTask.config.name} />
-                </div>
+          <div className="w-full max-w-5xl h-[80vh] bg-neutral-900 rounded-xl shadow-2xl flex flex-col border border-neutral-800 relative">
+            <button
+              onClick={() => setTerminalTask(null)}
+              className="absolute -top-3 -right-3 w-8 h-8 bg-neutral-700 text-white rounded-full flex items-center justify-center hover:bg-neutral-600 shadow-lg border border-neutral-600 z-10 text-xl font-bold"
+            >
+              &times;
+            </button>
+            <div className="flex-1 p-2">
+              <TerminalView taskId={terminalTask.config.id} taskName={terminalTask.config.name} />
             </div>
+          </div>
         </div>
       )}
 
@@ -319,50 +317,50 @@ export default function App() {
             <div className="flex flex-col gap-4">
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">Name</label>
-                <input 
-                    value={newName}
-                    onChange={e => setNewName(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-white"
-                    placeholder="e.g. API Server"
+                <input
+                  value={newName}
+                  onChange={e => setNewName(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-white"
+                  placeholder="e.g. API Server"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">Command</label>
-                <textarea 
-                    value={newCmd}
-                    onChange={e => setNewCmd(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 transition-colors h-24 text-white"
-                    placeholder="npm run dev"
+                <textarea
+                  value={newCmd}
+                  onChange={e => setNewCmd(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 transition-colors h-24 text-white"
+                  placeholder="npm run dev"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">Tag</label>
-                <input 
-                    value={newTag}
-                    onChange={e => setNewTag(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-white"
-                    placeholder="Default"
+                <input
+                  value={newTag}
+                  onChange={e => setNewTag(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-blue-500 transition-colors text-white"
+                  placeholder="Default"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-neutral-400 mb-1">Environment Variables (KEY=VALUE)</label>
-                <textarea 
-                    value={newEnv}
-                    onChange={e => setNewEnv(e.target.value)}
-                    className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 transition-colors h-20 text-white"
-                    placeholder="NODE_ENV=production&#10;PORT=3000"
+                <textarea
+                  value={newEnv}
+                  onChange={e => setNewEnv(e.target.value)}
+                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:border-blue-500 transition-colors h-20 text-white"
+                  placeholder="NODE_ENV=production&#10;PORT=3000"
                 />
               </div>
               <div className="flex items-center gap-2">
-                <input 
-                    type="checkbox"
-                    id="autoRetry"
-                    checked={autoRetry}
-                    onChange={e => setAutoRetry(e.target.checked)}
-                    className="w-4 h-4 rounded border-neutral-800 bg-neutral-950 text-blue-600 focus:ring-blue-500 focus:ring-offset-neutral-900"
+                <input
+                  type="checkbox"
+                  id="autoRetry"
+                  checked={autoRetry}
+                  onChange={e => setAutoRetry(e.target.checked)}
+                  className="w-4 h-4 rounded border-neutral-800 bg-neutral-950 text-blue-600 focus:ring-blue-500 focus:ring-offset-neutral-900"
                 />
                 <label htmlFor="autoRetry" className="text-sm font-medium text-neutral-400 cursor-pointer">
-                    Auto Restart on Exit
+                  Auto Restart on Exit
                 </label>
               </div>
               <div className="flex justify-end gap-3 mt-4">
